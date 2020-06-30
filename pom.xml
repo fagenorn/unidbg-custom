@@ -144,7 +144,7 @@
         <repository>
             <id>releases.write</id>
             <name>Releases Repository</name>
-            <url>http://fagenorn.com:8085/repository/maven-releases/</url>
+            <url>http://192.168.1.6:8085/repository/maven-releases/</url>
         </repository>
     </distributionManagement>
 </project>

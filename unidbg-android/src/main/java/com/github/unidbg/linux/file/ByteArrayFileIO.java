@@ -2,6 +2,7 @@ package com.github.unidbg.linux.file;
 
 import com.github.unidbg.Emulator;
 import com.github.unidbg.file.linux.BaseAndroidFileIO;
+import com.github.unidbg.file.linux.StatFsStructure;
 import com.github.unidbg.file.linux.StatStructure;
 import com.github.unidbg.unix.IO;
 import com.sun.jna.Pointer;

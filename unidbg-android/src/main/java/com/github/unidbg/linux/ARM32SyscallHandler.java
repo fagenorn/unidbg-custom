@@ -15,6 +15,7 @@ import com.github.unidbg.file.linux.IOConstants;
 import com.github.unidbg.linux.android.AndroidResolver;
 import com.github.unidbg.linux.file.*;
 import com.github.unidbg.linux.struct.Stat32;
+import com.github.unidbg.linux.struct.StatFs32;
 import com.github.unidbg.linux.struct.SysInfo32;
 import com.github.unidbg.memory.Memory;
 import com.github.unidbg.memory.MemoryMap;
@@ -1606,7 +1607,7 @@ public class ARM32SyscallHandler extends AndroidSyscallHandler {
         return ret;
     }
 
-    protected int statfs64(Emulator<?> emulator) {
+    protected int statfs64(Emulator<AndroidFileIO> emulator) {
         RegisterContext context = emulator.getContext();
         Pointer pathPointer = context.getPointerArg(0);
         int size = context.getIntArg(1);
@@ -1617,9 +1618,20 @@ public class ARM32SyscallHandler extends AndroidSyscallHandler {
             return -1;
         }
 
+        return statfs64(emulator, path, buf);
+        // throw new UnicornException("statfs64 path=" + path + ", size=" + size +
+        // ",buf=" + buf);
+    }
+
+    protected int statfs64(Emulator<AndroidFileIO> emulator, String pathname, Pointer statfsbuf) {
+        FileResult<AndroidFileIO> result = resolve(emulator, pathname, IOConstants.O_RDONLY);
+        if (result != null && result.isSuccess()) {
+            return result.io.statfs(emulator, new StatFs32(statfsbuf));
+        }
+
+        log.info("stat64fs pathname=" + pathname + ", LR=" + emulator.getContext().getLRPointer());
+        emulator.getMemory().setErrno(result != null ? result.errno : UnixEmulator.ENOENT);
         return -1;
-        // throw new UnicornException("statfs64 path=" + path + ", size=" + size + ",
-        // buf=" + buf);
     }
 
     private static final int PR_GET_DUMPABLE = 3;
