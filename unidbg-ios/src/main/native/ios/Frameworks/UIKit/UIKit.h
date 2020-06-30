@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import "../frameworks.h"
 
 typedef NSString *NSNotificationName;
 const NSNotificationName UIApplicationDidReceiveMemoryWarningNotification = @"UIApplicationDidReceiveMemoryWarningNotification";
@@ -24,7 +25,30 @@ typedef enum UIApplicationState : NSInteger {
     UIApplicationStateBackground
 } UIApplicationState;
 
+typedef enum UIUserInterfaceStyle : NSInteger {
+    UIUserInterfaceStyleUnspecified,
+    UIUserInterfaceStyleLight,
+    UIUserInterfaceStyleDark
+} UIUserInterfaceStyle;
+
+typedef struct UIEdgeInsets {
+    CGFloat top, left, bottom, right;  // specify amount to inset (positive) for each of the edges. values can be negative to 'outset'
+} UIEdgeInsets;
+
+const UIEdgeInsets UIEdgeInsetsZero = { 0.0, 0.0, 0.0, 0.0 };
+
+@interface UITraitCollection : NSObject
+@property(nonatomic) UIUserInterfaceStyle userInterfaceStyle;
+@end
+
 @interface UIColor : NSObject
+- (UIColor *)initWithDynamicProvider:(UIColor * (^)(UITraitCollection *traitCollection))dynamicProvider;
+- (UIColor *)resolvedColorWithTraitCollection:(UITraitCollection *)traitCollection;
+- (CGColorRef)CGColor;
+- (void)setFill;
+@end
+
+@interface UIImageAsset : NSObject
 @end
 
 @interface UIResponder : NSObject
@@ -36,6 +60,7 @@ typedef enum UIApplicationState : NSInteger {
 @property(nonatomic) CGRect frame;
 - (id)initWithFrame:(CGRect)rect;
 - (void)setAccessibilityViewIsModal:(BOOL)flag;
+- (void)setOverrideUserInterfaceStyle:(UIUserInterfaceStyle)style;
 @end
 
 @interface UIWindow : UIView
@@ -116,4 +141,8 @@ typedef enum UIDeviceBatteryState : NSInteger {
 + (UIScreen *)mainScreen;
 - (CGRect)bounds;
 - (CGFloat)scale;
+@end
+
+@interface UIImage : NSObject
+@property(nonatomic) CGImageRef CGImage;
 @end

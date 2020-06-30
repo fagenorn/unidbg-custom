@@ -1,17 +1,19 @@
 package com.github.unidbg.ios;
 
+import com.github.unidbg.Emulator;
 import com.github.unidbg.LibraryResolver;
 import com.github.unidbg.Module;
 import com.github.unidbg.Symbol;
-import com.github.unidbg.file.ios.DarwinFileSystem;
 import com.github.unidbg.hook.HookLoader;
+import com.github.unidbg.hook.MsgSendCallback;
 import com.github.unidbg.pointer.UnicornPointer;
+import com.sun.jna.Pointer;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
 import java.io.File;
 
-public class Substrate64Test extends EmulatorTest<DarwinARM64Emulator> {
+public class Substrate64Test extends EmulatorTest<DarwinARM64Emulator> implements MsgSendCallback {
 
     @Override
     protected LibraryResolver createLibraryResolver() {
@@ -20,14 +22,14 @@ public class Substrate64Test extends EmulatorTest<DarwinARM64Emulator> {
 
     @Override
     protected DarwinARM64Emulator createARMEmulator() {
-        return new DarwinARM64Emulator(new File("target/rootfs/substrate"));
+        return new DarwinARM64Emulator(null, new File("target/rootfs/substrate"), "CFFIXED_USER_HOME=/var/mobile");
     }
 
     public void testMS() throws Exception {
         MachOLoader loader = (MachOLoader) emulator.getMemory();
 //        Debugger debugger = emulator.attach();
 //        debugger.addBreakPoint(null, 0x100dd29b4L);
-        Logger.getLogger("com.github.unidbg.AbstractEmulator").setLevel(Level.DEBUG);
+        Logger.getLogger("com.github.unidbg.AbstractEmulator").setLevel(Level.INFO);
 //        Logger.getLogger("com.github.unidbg.ios.ARM64SyscallHandler").setLevel(Level.DEBUG);
 //        emulator.traceCode();
         loader.setObjcRuntime(true);
@@ -48,7 +50,6 @@ public class Substrate64Test extends EmulatorTest<DarwinARM64Emulator> {
 
 //        IWhale whale = Whale.getInstance(emulator);
 //        Logger.getLogger("com.github.emulator.ios.ARM64SyscallHandler").setLevel(Level.DEBUG);
-//        Logger.getLogger("com.github.unidbg.ios.Dyld64").setLevel(Level.DEBUG);
 //        Module libwhale = emulator.getMemory().findModule("libwhale.dylib");
 //        emulator.attach(libwhale.base, libwhale.base + libwhale.size).addBreakPoint(libwhale, 0x0000184b0);
         /*whale.importHookFunction("_malloc", new ReplaceCallback() {
@@ -139,6 +140,8 @@ public class Substrate64Test extends EmulatorTest<DarwinARM64Emulator> {
         ret = numbers[0].longValue();
         System.err.println("_MSFindSymbol ret=0x" + Long.toHexString(ret) + ", offset=" + (System.currentTimeMillis() - start) + "ms");
 
+        HookLoader.load(emulator).hookObjcMsgSend(this);
+
         start = System.currentTimeMillis();
 //        Logger.getLogger("com.github.unidbg.ios.MachOLoader").setLevel(Level.DEBUG);
 //        Logger.getLogger("com.github.unidbg.spi.AbstractLoader").setLevel(Level.DEBUG);
@@ -146,22 +149,22 @@ public class Substrate64Test extends EmulatorTest<DarwinARM64Emulator> {
 
 //        new CoreTelephony("中国电信", "460", "cn", "01", false).processHook(emulator);
 
-        Logger.getLogger("com.github.unidbg.AbstractEmulator").setLevel(Level.DEBUG);
-//        emulator.attach().addBreakPoint(null, 0x0000000100004118L);
+        Logger.getLogger("com.github.unidbg.AbstractEmulator").setLevel(Level.INFO);
+//        emulator.attach().addBreakPoint(null, 0x00000001000072E0L);
 //        emulator.traceCode(0xffffe0000L, 0xffffe0000L + 0x10000);
-//        Logger.getLogger("com.github.unidbg.ios.ARM64SyscallHandler").setLevel(Level.DEBUG);
+        Logger.getLogger("com.github.unidbg.ios.ARM64SyscallHandler").setLevel(Level.INFO);
+//        Module debugModule = emulator.getMemory().findModule("CoreFoundation");
+//        emulator.attach().addBreakPoint(debugModule, 0x0000000000105AA4);
+        Logger.getLogger("com.github.unidbg.ios.Dyld64").setLevel(Level.INFO);
         loader.getExecutableModule().callEntry(emulator);
         System.err.println("callExecutableEntry offset=" + (System.currentTimeMillis() - start) + "ms");
-
-        HookLoader.load(emulator);
     }
 
     @Override
     protected void setUp() throws Exception {
         super.setUp();
 
-        DarwinFileSystem fileSystem = (DarwinFileSystem) emulator.getFileSystem();
-        fileSystem.config("unidbg");
+        emulator.getSyscallHandler().setVerbose(false);
     }
 
     public static void main(String[] args) throws Exception {
@@ -171,4 +174,8 @@ public class Substrate64Test extends EmulatorTest<DarwinARM64Emulator> {
         test.tearDown();
     }
 
+    @Override
+    public void onMsgSend(Emulator<?> emulator, boolean systemClass, String className, String cmd, Pointer lr) {
+//        System.out.printf("onMsgSend [%s %s] from %s\n", className, cmd, lr);
+    }
 }

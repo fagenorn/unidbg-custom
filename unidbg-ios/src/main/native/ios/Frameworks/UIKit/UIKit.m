@@ -20,7 +20,10 @@ int UIApplicationMain(int argc, char *argv[], NSString *principalClassName, NSSt
   }
   NSString *json = [[NSString alloc] initWithCString: argv[2] encoding: NSUTF8StringEncoding];
   NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding: NSUTF8StringEncoding] options:kNilOptions error:nil];
-  NSLog(@"UIApplicationMain argc=%d, argv=%p, principalClassName=%@, delegateClassName=%@, delegate=%@, dict=%@", argc, argv, principalClassName, delegateClassName, delegate, dict);
+  if(is_debug()) {
+    NSLog(@"UIApplicationMain argc=%d, argv=%p, principalClassName=%@, delegateClassName=%@, delegate=%@, dict=%@", argc, argv, principalClassName, delegateClassName, delegate, dict);
+  }
+  [json release];
 
   NSString *_systemName = dict[@"systemName"];
   if(_systemName) {
@@ -59,9 +62,11 @@ int UIApplicationMain(int argc, char *argv[], NSString *principalClassName, NSSt
   NSNumber *callFinishLaunchingWithOptions = dict[@"callFinishLaunchingWithOptions"];
   if(delegate && [callFinishLaunchingWithOptions boolValue]) {
     UIApplication *application = [UIApplication sharedApplication];
-    NSDictionary *options = [[NSDictionary alloc] init];
+    NSDictionary *options = [NSDictionary dictionary];
     [delegate application: application didFinishLaunchingWithOptions: options];
-    NSLog(@"UIApplicationMain didFinishLaunchingWithOptions delegate=%@", delegate);
+    if(is_debug()) {
+      NSLog(@"UIApplicationMain didFinishLaunchingWithOptions delegate=%@", delegate);
+    }
   }
   return 0;
 }
@@ -70,12 +75,41 @@ const CGRect g_frame = { 0, 0, 768, 1024 };
 
 @implementation UIScreen
 + (UIScreen *)mainScreen {
-    return [[UIScreen alloc] init];
+    static dispatch_once_t once;
+    static id instance;
+    dispatch_once(&once, ^{ instance = [[UIScreen alloc] init]; });
+    return instance;
 }
 - (CGRect)bounds {
     return g_frame;
 }
 - (CGFloat)scale {
+    return 1.0;
+}
+@end
+
+@implementation UITraitCollection
+- (id)init {
+    if(self = [super init]) {
+        self.userInterfaceStyle = UIUserInterfaceStyleLight;
+    }
+    return self;
+}
++ (UITraitCollection *)traitCollectionWithUserInterfaceStyle:(UIUserInterfaceStyle)_userInterfaceStyle {
+    UITraitCollection *trait = [UITraitCollection new];
+    trait.userInterfaceStyle = _userInterfaceStyle;
+    return trait;
+}
++ (UITraitCollection *)currentTraitCollection {
+    return [UITraitCollection traitCollectionWithUserInterfaceStyle: UIUserInterfaceStyleLight];
+}
++ (UITraitCollection *)traitCollectionWithDisplayScale:(CGFloat)scale {
+    return [UITraitCollection traitCollectionWithUserInterfaceStyle: UIUserInterfaceStyleLight];
+}
++ (UITraitCollection *)traitCollectionWithTraitsFromCollections:(NSArray<UITraitCollection *> *)traitCollections {
+    return [UITraitCollection traitCollectionWithUserInterfaceStyle: UIUserInterfaceStyleLight];
+}
+- (CGFloat)displayScale {
     return 1.0;
 }
 @end
@@ -93,6 +127,21 @@ const CGRect g_frame = { 0, 0, 768, 1024 };
 + (UIColor *)blackColor {
     return [UIColor new];
 }
+- (UIColor *)initWithDynamicProvider:(UIColor * (^)(UITraitCollection *traitCollection))dynamicProvider {
+    return dynamicProvider([UITraitCollection new]);
+}
+- (UIColor *)resolvedColorWithTraitCollection:(UITraitCollection *)traitCollection {
+    return [UIColor new];
+}
+- (CGColorRef)CGColor {
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGFloat components[] = { 0.0, 0.0, 0.0, 0.0 };
+    CGColorRef color = CGColorCreate(colorSpace, components);
+    CGColorSpaceRelease(colorSpace);
+    return color;
+}
+- (void)setFill {
+}
 @end
 
 @implementation UIView
@@ -101,6 +150,10 @@ const CGRect g_frame = { 0, 0, 768, 1024 };
         self.frame = rect;
     }
     return self;
+}
+- (void)setAccessibilityViewIsModal:(BOOL)flag {
+}
+- (void)setOverrideUserInterfaceStyle:(UIUserInterfaceStyle)style {
 }
 @end
 
@@ -117,7 +170,10 @@ const CGRect g_frame = { 0, 0, 768, 1024 };
 
 @implementation MyUIApplicationDelegate
 - (UIWindow *)window {
-    return [[UIWindow alloc] init];
+    static dispatch_once_t once;
+    static id instance;
+    dispatch_once(&once, ^{ instance = [[UIWindow alloc] init]; });
+    return instance;
 }
 - (id) m_appViewControllerMgr {
     return nil;
@@ -164,7 +220,7 @@ const CGRect g_frame = { 0, 0, 768, 1024 };
 }
 
 - (NSArray *)windows {
-    return [[NSArray alloc] init];
+    return [NSArray array];
 }
 
 @end
@@ -172,7 +228,10 @@ const CGRect g_frame = { 0, 0, 768, 1024 };
 @implementation UIDevice
 
 + (UIDevice *)currentDevice {
-    return [[UIDevice alloc] init];
+    static dispatch_once_t once;
+    static id instance;
+    dispatch_once(&once, ^{ instance = [[UIDevice alloc] init]; });
+    return instance;
 }
 
 - (id)init {
@@ -218,3 +277,46 @@ const CGRect g_frame = { 0, 0, 768, 1024 };
 
 @implementation UIResponder
 @end
+
+@implementation UIImage
++ (UIImage *)imageWithContentsOfFile: (NSString *)path {
+  UIImage *image = [UIImage new];
+  CGDataProviderRef provider = CGDataProviderCreateWithFilename([path UTF8String]);
+  image.CGImage = CGImageCreateWithPNGDataProvider(provider, NULL, true, kCGRenderingIntentDefault);
+  CGDataProviderRelease(provider);
+  return image;
+}
+- (UIImage *)resizableImageWithCapInsets:(UIEdgeInsets)capInsets {
+  return self;
+}
+- (CGFloat)scale {
+  return 1.0;
+}
+- (UITraitCollection *)traitCollection {
+  return [UITraitCollection new];
+}
+- (UIImageAsset *)imageAsset {
+  return [UIImageAsset new];
+}
+@end
+
+@implementation UIImageAsset
+- (UIImage *)imageWithTraitCollection:(UITraitCollection *)traitCollection {
+  return [UIImage new];
+}
+- (void)registerImage:(UIImage *)image withTraitCollection:(UITraitCollection *)traitCollection {
+}
+@end
+
+void UIGraphicsBeginImageContextWithOptions(CGSize size, BOOL opaque, CGFloat scale) {
+}
+
+void UIRectFill(CGRect rect) {
+}
+
+UIImage *UIGraphicsGetImageFromCurrentImageContext() {
+  return [UIImage new];
+}
+
+void UIGraphicsEndImageContext() {
+}

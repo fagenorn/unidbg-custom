@@ -26,7 +26,6 @@ import com.github.unidbg.memory.MemoryMap;
 import com.github.unidbg.memory.SvcMemory;
 import com.github.unidbg.pointer.UnicornPointer;
 import com.github.unidbg.pointer.UnicornStructure;
-import com.github.unidbg.spi.SyscallHandler;
 import com.github.unidbg.unix.UnixEmulator;
 import com.github.unidbg.unix.UnixSyscallHandler;
 import com.github.unidbg.unix.struct.TimeVal32;
@@ -49,7 +48,7 @@ import static com.github.unidbg.ios.file.SocketIO.AF_ROUTE;
 /**
  * http://androidxref.com/4.4.4_r1/xref/external/kernel-headers/original/asm-arm/unistd.h
  */
-public class ARM32SyscallHandler extends UnixSyscallHandler<DarwinFileIO> implements SyscallHandler<DarwinFileIO>, DarwinSyscall {
+public class ARM32SyscallHandler extends DarwinSyscallHandler {
 
     private static final Log log = LogFactory.getLog(ARM32SyscallHandler.class);
 
@@ -203,6 +202,12 @@ public class ARM32SyscallHandler extends UnixSyscallHandler<DarwinFileIO> implem
                 case 10:
                     u.reg_write(ArmConst.UC_ARM_REG_R0, unlink(emulator));
                     return;
+                case 15:
+                    u.reg_write(ArmConst.UC_ARM_REG_R0, chmod(emulator));
+                    return;
+                case 16:
+                    u.reg_write(ArmConst.UC_ARM_REG_R0, chown(emulator));
+                    return;
                 case 20:
                     u.reg_write(ArmConst.UC_ARM_REG_R0, getpid(emulator));
                     return;
@@ -301,6 +306,9 @@ public class ARM32SyscallHandler extends UnixSyscallHandler<DarwinFileIO> implem
                 case 220:
                     u.reg_write(ArmConst.UC_ARM_REG_R0, getattrlist(emulator));
                     return;
+                case 221:
+                    u.reg_write(ArmConst.UC_ARM_REG_R0, setattrlist(emulator));
+                    return;
                 case 240:
                     u.reg_write(ArmConst.UC_ARM_REG_R0, listxattr(emulator));
                     return;
@@ -348,6 +356,9 @@ public class ARM32SyscallHandler extends UnixSyscallHandler<DarwinFileIO> implem
                     return;
                 case 346:
                     u.reg_write(ArmConst.UC_ARM_REG_R0, fstatfs64(u, emulator));
+                    return;
+                case 347:
+                    u.reg_write(ArmConst.UC_ARM_REG_R0, getfsstat64(emulator));
                     return;
                 case 357:
                     u.reg_write(ArmConst.UC_ARM_REG_R0, getaudit_addr(u, emulator));
@@ -492,6 +503,36 @@ public class ARM32SyscallHandler extends UnixSyscallHandler<DarwinFileIO> implem
         FileResult<DarwinFileIO> result = resolve(emulator, pathname, IOConstants.O_RDONLY);
         if (result != null && result.isSuccess()) {
             int ret = result.io.getattrlist(attrList, attrBuf, attrBufSize);
+            if (ret != 0) {
+                log.info(msg + ", ret=" + ret);
+            } else {
+                if (log.isDebugEnabled()) {
+                    log.debug(msg + ", ret=" + ret);
+                }
+            }
+            return ret;
+        }
+
+        emulator.getMemory().setErrno(result != null ? result.errno : UnixEmulator.EACCES);
+        log.info(msg);
+        return -1;
+    }
+
+    private int setattrlist(Emulator<DarwinFileIO> emulator) {
+        Arm32RegisterContext context = emulator.getContext();
+        Pointer path = context.getPointerArg(0);
+        Pointer attrListPointer = context.getPointerArg(1);
+        UnicornPointer attrBuf = context.getPointerArg(2);
+        int attrBufSize = context.getIntArg(3);
+        int options = context.getR4Int();
+        String pathname = path.getString(0);
+        AttrList attrList = new AttrList(attrListPointer);
+        attrBuf.setSize(attrBufSize);
+
+        String msg = "setattrlist path=" + pathname + ", attrList=" + attrList + ", attrBuf=" + attrBuf + ", attrBufSize=" + attrBufSize + ", options=0x" + Integer.toHexString(options);
+        FileResult<DarwinFileIO> result = resolve(emulator, pathname, IOConstants.O_RDONLY);
+        if (result != null && result.isSuccess()) {
+            int ret = result.io.setattrlist(attrList, attrBuf, attrBufSize);
             if (ret != 0) {
                 log.info(msg + ", ret=" + ret);
             } else {
@@ -881,6 +922,25 @@ public class ARM32SyscallHandler extends UnixSyscallHandler<DarwinFileIO> implem
         return 0;
     }
 
+    private int chmod(Emulator<DarwinFileIO> emulator) {
+        RegisterContext context = emulator.getContext();
+        Pointer path = context.getPointerArg(0);
+        int mode = context.getIntArg(1) & 0xffff;
+        String pathname = path.getString(0);
+        log.info("chmod path=" + pathname + ", mode=0x" + Integer.toHexString(mode));
+        return 0;
+    }
+
+    private int chown(Emulator<DarwinFileIO> emulator) {
+        RegisterContext context = emulator.getContext();
+        Pointer path = context.getPointerArg(0);
+        int uid = context.getIntArg(1);
+        int gid = context.getIntArg(2);
+        String pathname = path.getString(0);
+        log.info("chown path=" + pathname + ", uid=" + uid + ", gid=" + gid);
+        return 0;
+    }
+
     private int getdirentries64(Emulator<DarwinFileIO> emulator) {
         RegisterContext context = emulator.getContext();
         int fd = context.getIntArg(0);
@@ -928,6 +988,16 @@ public class ARM32SyscallHandler extends UnixSyscallHandler<DarwinFileIO> implem
             return io.fstatfs(new StatFS(buf));
         }
         emulator.getMemory().setErrno(UnixEmulator.EACCES);
+        return -1;
+    }
+
+    protected int getfsstat64(Emulator<DarwinFileIO> emulator) {
+        RegisterContext context = emulator.getContext();
+        Pointer buf = context.getPointerArg(0);
+        int bufSize = context.getIntArg(1);
+        int flags = context.getIntArg(2);
+        log.info("getfsstat64 buf=" + buf + ", bufSize=" + bufSize + ", flags=0x" + Integer.toHexString(flags));
+        emulator.getMemory().setErrno(UnixEmulator.EOPNOTSUPP);
         return -1;
     }
 
@@ -988,7 +1058,7 @@ public class ARM32SyscallHandler extends UnixSyscallHandler<DarwinFileIO> implem
             return result.io.fstat(emulator, new Stat(statbuf));
         }
 
-        emulator.getMemory().setErrno(result != null ? result.errno : UnixEmulator.EACCES);
+        emulator.getMemory().setErrno(result != null ? result.errno : UnixEmulator.ENOENT);
         return -1;
     }
 
@@ -1217,6 +1287,9 @@ public class ARM32SyscallHandler extends UnixSyscallHandler<DarwinFileIO> implem
                     if (log.isDebugEnabled()) {
                         log.debug("sysctl CTL_UNSPEC action=" + action + ", namelen=" + namelen + ", buffer=" + buffer + ", bufferSize=" + bufferSize + ", sub=" + sub);
                     }
+                    if ("unidbg.debug".equals(sub)) {
+                        return LogFactory.getLog("com.github.unidbg.ios.debug").isDebugEnabled() ? 1 : 0;
+                    }
                     if ("kern.ostype".equals(sub)) {
                         buffer.setInt(0, CTL_KERN);
                         buffer.setInt(4, KERN_OSTYPE);
@@ -1348,6 +1421,7 @@ public class ARM32SyscallHandler extends UnixSyscallHandler<DarwinFileIO> implem
                             KInfoProc32 kInfoProc = new KInfoProc32(buffer);
                             kInfoProc.unpack();
 
+                            kInfoProc.kp_proc.p_flag = 0; // P_TRACED
                             kInfoProc.kp_eproc.e_ucred.cr_uid = 0;
                             kInfoProc.pack();
                             if (log.isDebugEnabled()) {
@@ -1380,9 +1454,9 @@ public class ARM32SyscallHandler extends UnixSyscallHandler<DarwinFileIO> implem
                             bufferSize.setInt(0, UnicornStructure.calculateSize(TimeVal32.class));
                         }
                         if (buffer != null) {
-                            long currentTimeMillis = System.currentTimeMillis();
+                            long currentTimeMillis = bootTime;
                             long tv_sec = currentTimeMillis / 1000;
-                            long tv_usec = (currentTimeMillis % 1000) * 1000;
+                            long tv_usec = (currentTimeMillis % 1000) * 1000 + (bootTime / 7 % 1000);
                             TimeVal32 timeVal = new TimeVal32(buffer);
                             timeVal.tv_sec = (int) tv_sec;
                             timeVal.tv_usec = (int) tv_usec;

@@ -6,6 +6,7 @@ import com.github.unidbg.Symbol;
 import com.github.unidbg.arm.*;
 import com.github.unidbg.arm.context.EditableArm64RegisterContext;
 import com.github.unidbg.arm.context.RegisterContext;
+import com.github.unidbg.ios.struct.DyldUnwindSections;
 import com.github.unidbg.memory.Memory;
 import com.github.unidbg.memory.SvcMemory;
 import com.github.unidbg.pointer.UnicornPointer;
@@ -63,6 +64,7 @@ public class Dyld64 extends Dyld {
     private Pointer __dyld_dlopen_preflight;
     private long _os_trace_redirect_func;
     private long sandbox_check;
+    private long __availability_version_check;
 
     @Override
     final int _dyld_func_lookup(Emulator<?> emulator, String name, Pointer address) {
@@ -332,6 +334,23 @@ public class Dyld64 extends Dyld {
                                 }
                                 return sandbox_check;
                             }
+                            if ("_availability_version_check".equals(symbolName)) {
+                                if (__availability_version_check == 0) {
+                                    __availability_version_check = svcMemory.registerSvc(new Arm64Svc() {
+                                        @Override
+                                        public long handle(Emulator<?> emulator) {
+                                            RegisterContext ctx = emulator.getContext();
+                                            int count = ctx.getIntArg(0);
+                                            Pointer versions = ctx.getPointerArg(1);
+                                            if (log.isDebugEnabled()) {
+                                                log.debug("_availability_version_check count=" + count + ", versions=" + versions);
+                                            }
+                                            return 1;
+                                        }
+                                    }).peer;
+                                }
+                                return __availability_version_check;
+                            }
 
                             return dlsym(emulator, handle, "_" + symbolName);
                         }
@@ -401,12 +420,19 @@ public class Dyld64 extends Dyld {
                         @Override
                         public long handle(Emulator<?> emulator) {
                             RegisterContext context = emulator.getContext();
-                            Pointer addr = context.getPointerArg(0);
+                            UnicornPointer addr = context.getPointerArg(0);
                             Pointer info = context.getPointerArg(1);
-                            if (log.isDebugEnabled()) {
-                                log.debug("__dyld_find_unwind_sections addr=" + addr + ", info=" + info);
+                            MachOModule module = (MachOModule) emulator.getMemory().findModuleByAddress(addr.peer);
+                            if (module == null) {
+                                log.info("__dyld_find_unwind_sections addr=" + addr + ", info=" + info);
+                                return 0;
+                            } else {
+                                if (log.isDebugEnabled()) {
+                                    log.debug("__dyld_find_unwind_sections addr=" + addr + ", info=" + info);
+                                }
+                                module.getUnwindInfo(new DyldUnwindSections(info));
+                                return 1;
                             }
-                            return 0;
                         }
                     });
                 }
@@ -624,8 +650,11 @@ public class Dyld64 extends Dyld {
                 pointer.setLong(0, 0);
 
                 if (ret == 0) {
-                    log.info("dlopen failed: " + path);
                     this.error.setString(0, "Resolve library " + path + " failed");
+                    if ("/usr/sbin/aslmanager".equals(path)) {
+                        return 0;
+                    }
+                    log.info("dlopen failed: " + path);
                     if (log.isDebugEnabled()) {
                         emulator.attach().debug();
                     }

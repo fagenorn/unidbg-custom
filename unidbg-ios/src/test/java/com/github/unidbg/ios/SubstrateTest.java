@@ -3,6 +3,7 @@ package com.github.unidbg.ios;
 import com.github.unidbg.LibraryResolver;
 import com.github.unidbg.Module;
 import com.github.unidbg.Symbol;
+import com.github.unidbg.hook.HookLoader;
 import com.github.unidbg.ios.ipa.NSUserDefaultsResolver;
 import com.github.unidbg.pointer.UnicornPointer;
 import org.apache.log4j.Level;
@@ -32,7 +33,7 @@ public class SubstrateTest extends EmulatorTest<DarwinARMEmulator> {
         loader.setObjcRuntime(true);
 //        emulator.traceCode();
 //        emulator.attach().addBreakPoint(null, 0x402ffd10);
-        Logger.getLogger("com.github.unidbg.AbstractEmulator").setLevel(Level.DEBUG);
+        Logger.getLogger("com.github.unidbg.AbstractEmulator").setLevel(Level.INFO);
         long start;
         Module module = emulator.loadLibrary(new File("unidbg-ios/src/test/resources/example_binaries/libsubstrate.dylib"));
 
@@ -129,6 +130,8 @@ public class SubstrateTest extends EmulatorTest<DarwinARMEmulator> {
         ret = numbers[0].intValue() & 0xffffffffL;
         System.err.println("_MSFindSymbol ret=0x" + Long.toHexString(ret) + ", offset=" + (System.currentTimeMillis() - start) + "ms");
 
+        HookLoader.load(emulator).hookObjcMsgSend(null);
+
         start = System.currentTimeMillis();
 //        Logger.getLogger("com.github.unidbg.AbstractEmulator").setLevel(Level.DEBUG);
 //        Logger.getLogger("com.github.unidbg.ios.ARM32SyscallHandler").setLevel(Level.DEBUG);
@@ -138,8 +141,9 @@ public class SubstrateTest extends EmulatorTest<DarwinARMEmulator> {
 
 //        emulator.attach(0xfffe0000L, 0xfffe0000L + 0x10000).addBreakPoint(null, 0xfffe0080L);
 //        emulator.traceCode(0xfffe0000L, 0xfffe0000L + 0x10000);
-        Logger.getLogger("com.github.unidbg.AbstractEmulator").setLevel(Level.DEBUG);
+        Logger.getLogger("com.github.unidbg.AbstractEmulator").setLevel(Level.INFO);
 //        Logger.getLogger("com.github.unidbg.ios.ARM32SyscallHandler").setLevel(Level.DEBUG);
+        Logger.getLogger("com.github.unidbg.ios.debug").setLevel(Level.DEBUG);
         loader.getExecutableModule().callEntry(emulator);
         System.err.println("callExecutableEntry offset=" + (System.currentTimeMillis() - start) + "ms");
     }

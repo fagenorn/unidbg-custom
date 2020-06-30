@@ -4,7 +4,16 @@
 #import <Foundation/Foundation.h>
 
 CFDictionaryRef CFNetworkCopySystemProxySettings() {
-  fprintf(stderr, "CFNetworkCopySystemProxySettings\n");
+  uintptr_t lr = 1;
+  __asm__(
+    "mov %[LR], lr\n"
+    :[LR]"=r"(lr)
+  );
+  if(is_debug()) {
+    char buf[512];
+    print_lr(buf, lr);
+    fprintf(stderr, "CFNetworkCopySystemProxySettings LR=%s\n", buf);
+  }
 
   id objects[] = { @"*.local", @"169.254/16" };
   NSArray *array = [NSArray arrayWithObjects:objects count:2];
@@ -24,5 +33,7 @@ CFDictionaryRef CFNetworkCopySystemProxySettings() {
   [dict setObject: array forKey: @"ExceptionsList"];
   [dict setObject: (__bridge NSNumber*) ftpPassive forKey: @"FTPPassive"];
   [dict setObject: scope forKey: @"__SCOPED__"];
+
+  CFRelease(ftpPassive);
   return (__bridge CFDictionaryRef) dict;
 }

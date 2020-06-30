@@ -10,6 +10,7 @@ import keystone.Keystone;
 import keystone.KeystoneArchitecture;
 import keystone.KeystoneMode;
 import org.apache.commons.codec.DecoderException;
+import org.apache.commons.codec.binary.Hex;
 import unicorn.ArmConst;
 import unicorn.Unicorn;
 import unicorn.UnicornException;
@@ -47,7 +48,12 @@ class SimpleARMDebugger extends AbstractARMDebugger implements Debugger {
                     continue;
                 }
                 if ("run".equals(line) && callable != null) {
-                    callable.call();
+                    try {
+                        callbackRunning = true;
+                        callable.call();
+                    } finally {
+                        callbackRunning = false;
+                    }
                     continue;
                 }
                 if ("d".equals(line) || "dis".equals(line)) {
@@ -122,6 +128,19 @@ class SimpleARMDebugger extends AbstractARMDebugger implements Debugger {
                 }
                 if ("where".equals(line)) {
                     new Exception("here").printStackTrace(System.out);
+                    continue;
+                }
+                if (line.startsWith("wx0x")) {
+                    String[] tokens = line.split("\\s+");
+                    long addr = Long.parseLong(tokens[0].substring(4).trim(), 16);
+                    Pointer pointer = UnicornPointer.pointer(emulator, addr);
+                    if (pointer != null && tokens.length > 1) {
+                        byte[] data = Hex.decodeHex(tokens[1].toCharArray());
+                        pointer.write(0, data, 0, data.length);
+                        dumpMemory(pointer, data.length, pointer.toString(), false);
+                    } else {
+                        System.out.println(addr + " is null");
+                    }
                     continue;
                 }
                 if (line.startsWith("w")) {
@@ -266,7 +285,7 @@ class SimpleARMDebugger extends AbstractARMDebugger implements Debugger {
                     System.out.println("Add breakpoint: 0x" + Long.toHexString(addr) + (module == null ? "" : (" in " + module.name + " [0x" + Long.toHexString(addr - module.base) + "]")));
                     continue;
                 }
-                if(handleCommon(u, line, address, size, nextAddress)) {
+                if(handleCommon(u, line, address, size, nextAddress, callable)) {
                     break;
                 }
             } catch (RuntimeException | DecoderException e) {
@@ -296,6 +315,7 @@ class SimpleARMDebugger extends AbstractARMDebugger implements Debugger {
         System.out.println();
         System.out.println("wr0-wr7, wfp, wip, wsp <value>: write specified register");
         System.out.println("wb(address), ws(address), wi(address) <value>: write (byte, short, integer) memory of specified address, address must start with 0x");
+        System.out.println("wx(address) <hex>: write bytes to memory at specified address, address must start with 0x");
         System.out.println();
         System.out.println("b(address): add temporarily breakpoint, address must start with 0x, can be module offset");
         System.out.println("b: add breakpoint of register PC");

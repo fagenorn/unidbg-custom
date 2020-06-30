@@ -477,6 +477,8 @@ public class MachOLoader extends AbstractLoader<DarwinFileIO> implements Memory,
         MachO.DysymtabCommand dysymtabCommand = null;
         MachO.EntryPointCommand entryPointCommand = null;
         List<String> ordinalList = new ArrayList<>();
+        Section fEHFrameSection = null;
+        Section fUnwindInfoSection = null;
         for (MachO.LoadCommand command : machO.loadCommands()) {
             switch (command.type()) {
                 case SEGMENT: {
@@ -487,8 +489,19 @@ public class MachOLoader extends AbstractLoader<DarwinFileIO> implements Memory,
                         break;
                     }
 
+                    boolean isTextSeg = "__TEXT".equals(segmentCommand.segname());
                     for (MachO.SegmentCommand.Section section : segmentCommand.sections()) {
-                        checkSection(dyId, segmentCommand.segname(), section.sectName());
+                        String sectName = section.sectName();
+                        if (isTextSeg && "__eh_frame".equals(sectName)) {
+                            fEHFrameSection = new Section(section.addr(), section.size());
+                            continue;
+                        }
+                        if (isTextSeg && "__unwind_info".equals(sectName)) {
+                            fUnwindInfoSection = new Section(section.addr(), section.size());
+                            continue;
+                        }
+
+                        checkSection(dyId, segmentCommand.segname(), sectName);
                     }
 
                     if (segmentCommand.vmsize() == 0) {
@@ -500,7 +513,7 @@ public class MachOLoader extends AbstractLoader<DarwinFileIO> implements Memory,
                         prot = UnicornConst.UC_PROT_ALL;
                     }
 
-                    if (machHeader == -1 && "__TEXT".equals(segmentCommand.segname())) {
+                    if (machHeader == -1 && isTextSeg) {
                         machHeader = begin;
                     }
                     Alignment alignment = this.mem_map(begin, segmentCommand.vmsize(), prot, dyId);
@@ -517,8 +530,19 @@ public class MachOLoader extends AbstractLoader<DarwinFileIO> implements Memory,
                         break;
                     }
 
+                    boolean isTextSeg = "__TEXT".equals(segmentCommand64.segname());
                     for (MachO.SegmentCommand64.Section64 section : segmentCommand64.sections()) {
-                        checkSection(dyId, segmentCommand64.segname(), section.sectName());
+                        String sectName = section.sectName();
+                        if (isTextSeg && "__eh_frame".equals(sectName)) {
+                            fEHFrameSection = new Section(section.addr(), section.size());
+                            continue;
+                        }
+                        if (isTextSeg && "__unwind_info".equals(sectName)) {
+                            fUnwindInfoSection = new Section(section.addr(), section.size());
+                            continue;
+                        }
+
+                        checkSection(dyId, segmentCommand64.segname(), sectName);
                     }
 
                     if (segmentCommand64.vmsize() == 0) {
@@ -530,7 +554,7 @@ public class MachOLoader extends AbstractLoader<DarwinFileIO> implements Memory,
                         prot = UnicornConst.UC_PROT_ALL;
                     }
 
-                    if (machHeader == -1 && "__TEXT".equals(segmentCommand64.segname())) {
+                    if (machHeader == -1 && isTextSeg) {
                         machHeader = begin;
                     }
                     Alignment alignment = this.mem_map(begin, segmentCommand64.vmsize(), prot, dyId);
@@ -650,7 +674,8 @@ public class MachOLoader extends AbstractLoader<DarwinFileIO> implements Memory,
         final long loadSize = size;
         MachOModule module = new MachOModule(machO, dyId, loadBase, loadSize, new HashMap<String, Module>(neededLibraries), regions,
                 symtabCommand, dysymtabCommand, buffer, lazyLoadNeededList, upwardLibraries, exportModules, dylibPath, emulator,
-                dyldInfoCommand, null, null, vars, machHeader, isExecutable, this, hookListeners, ordinalList);
+                dyldInfoCommand, null, null, vars, machHeader, isExecutable, this, hookListeners, ordinalList,
+                fEHFrameSection, fUnwindInfoSection);
         processRebase(log, module);
         if (isExecutable) {
             setExecuteModule(module);
@@ -739,11 +764,13 @@ public class MachOLoader extends AbstractLoader<DarwinFileIO> implements Memory,
             }
             return neededLibraryFile;
         } else {
-            for (String rpath : rpathSet) {
-                String soName = neededLibrary.replace(RPATH, rpath);
-                LibraryFile neededLibraryFile = libraryFile.resolveLibrary(emulator, soName);
+            List<String> rpathList = new ArrayList<>(rpathSet);
+            Collections.reverse(rpathList);
+            for (String rpath : rpathList) {
+                String dylibName = neededLibrary.replace(RPATH, rpath);
+                LibraryFile neededLibraryFile = libraryFile.resolveLibrary(emulator, dylibName);
                 if (libraryResolver != null && neededLibraryFile == null) {
-                    neededLibraryFile = libraryResolver.resolveLibrary(emulator, soName);
+                    neededLibraryFile = libraryResolver.resolveLibrary(emulator, dylibName);
                 }
                 if (neededLibraryFile != null) {
                     return neededLibraryFile;
@@ -801,9 +828,7 @@ public class MachOLoader extends AbstractLoader<DarwinFileIO> implements Memory,
             case "__dof_Cocoa_Aut":
             case "__dof_cache":
             case "__stubs":
-            case "__unwind_info":
             case "__got":
-            case "__eh_frame":
             case "__swift5_typeref":
             case "__swift5_fieldmd":
             case "__swift5_types":
@@ -828,6 +853,7 @@ public class MachOLoader extends AbstractLoader<DarwinFileIO> implements Memory,
             case "__swift_hooks":
             case "__bit_ios":
             case "__bit_hockey":
+            case "__thread_ptrs":
                 break;
             default:
                 boolean isObjc = sectName.startsWith("__objc_");
@@ -1382,7 +1408,7 @@ public class MachOLoader extends AbstractLoader<DarwinFileIO> implements Memory,
             }
             long bindAt = 0;
             for (HookListener listener : hookListeners) {
-                long hook = listener.hook(emulator.getSvcMemory(), module.name, symbolName, -1);
+                long hook = listener.hook(emulator.getSvcMemory(), module.name, symbolName, HookListener.EACH_BIND);
                 if (hook > 0) {
                     bindAt = hook;
                     break;
@@ -1737,7 +1763,32 @@ public class MachOLoader extends AbstractLoader<DarwinFileIO> implements Memory,
     public long mmap2(long start, int length, int prot, int flags, int fd, int offset) {
         int aligned = (int) ARM.alignSize(length, emulator.getPageAlign());
 
-        if (((flags & com.github.unidbg.ios.MachO.MAP_ANONYMOUS) != 0) || (start == 0 && fd <= 0 && offset == 0)) {
+        boolean isAnonymous = ((flags & com.github.unidbg.ios.MachO.MAP_ANONYMOUS) != 0) || (start == 0 && fd <= 0 && offset == 0);
+        if ((flags & MAP_FIXED) != 0 && isAnonymous) {
+            if (log.isDebugEnabled()) {
+                log.debug("mmap2 MAP_FIXED start=0x" + Long.toHexString(start) + ", length=" + length + ", prot=" + prot);
+            }
+
+            MemoryMap mapped = null;
+            for (MemoryMap map : memoryMap.values()) {
+                if (start >= map.base && start + aligned <= map.base + map.size) {
+                    mapped = map;
+                }
+            }
+
+            if (mapped != null) {
+                munmap(start, aligned);
+                unicorn.mem_map(start, aligned, prot);
+                if (memoryMap.put(start, new MemoryMap(start, aligned, prot)) != null) {
+                    log.warn("mmap2 replace exists memory map: start=" + Long.toHexString(start));
+                }
+                return start;
+            } else {
+                throw new IllegalStateException("mmap2 MAP_FIXED not found mapped memory: start=0x" + Long.toHexString(start));
+            }
+        }
+
+        if (isAnonymous) {
             long addr = allocateMapAddress(0, aligned);
             if (log.isDebugEnabled()) {
                 log.debug("mmap2 addr=0x" + Long.toHexString(addr) + ", mmapBaseAddress=0x" + Long.toHexString(mmapBaseAddress) + ", start=" + start + ", fd=" + fd + ", offset=" + offset + ", aligned=" + aligned);

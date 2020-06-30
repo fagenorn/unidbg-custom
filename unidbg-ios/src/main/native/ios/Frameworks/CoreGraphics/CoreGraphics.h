@@ -1,4 +1,5 @@
 #import <stdlib.h>
+#import "../frameworks.h"
 #import "spng.h"
 
 typedef struct CGDataProvider {
@@ -41,3 +42,8 @@ typedef struct CGRect {
 } CGRect;
 
 const CGRect CGRectZero = { 0, 0, 0, 0 };
+
+const CGSize CGSizeZero = { 0, 0 };
+
+typedef struct CGColor {
+} *CGColorRef;

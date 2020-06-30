@@ -23,6 +23,14 @@
 
 #define RTM_IFINFO	0xe
 
+static void hex(char *buf, void *ptr, size_t size) {
+  const char *data = (const char *) ptr;
+  int idx = 0;
+  for(int i = 0; i < size; i++) {
+    idx += sprintf(&buf[idx], "%02x", data[i] & 0xff);
+  }
+}
+
 static void test_printf() {
   char buf[0x40];
   memset(buf, 0, 0x40);
@@ -184,6 +192,11 @@ static void test_proc_pidinfo() {
   printf("proc_pidinfo ret=%d, pid=%d, size=%lu, pbsi_comm=%s, pbsi_flags=0x%x, pbsi_ppid=%d\n", ret, pid, sizeof(bsdinfo), bsdinfo.pbsi_comm, bsdinfo.pbsi_flags, bsdinfo.pbsi_ppid);
 }
 
+static void *thread_run(void *arg) {
+  printf("thread_run arg=%p\n", arg);
+  return NULL;
+}
+
 static void test_pthread() {
   char name[64];
   sprintf(name, "thread: %p", name);
@@ -191,7 +204,15 @@ static void test_pthread() {
   memset(name, 0, 64);
   pthread_t thread = pthread_self();
   pthread_getname_np(thread, name, sizeof(name));
-  printf("pthread[%p] name=%s\n", thread, name);
+  pthread_attr_t thread_attr;
+  pthread_attr_init(&thread_attr);
+  size_t stack_size = 0;
+  int ret = pthread_attr_getstacksize(&thread_attr, &stack_size);
+  printf("pthread[%p] name=%s, ret=%d, stack_size=%lu\n", thread, name, ret, stack_size);
+
+  ret = pthread_create(&thread, NULL, thread_run, NULL);
+  pthread_detach(thread);
+  printf("pthread[%p] ret=%d\n", thread, ret);
 }
 
 static void test_file() {
@@ -294,6 +315,32 @@ static void test_dirent() {
   printf("test_dirent size=%lu, d_fileno=%lu, d_name=%lu, d_name_size=%lu\n", sizeof(struct dirent), (unsigned long) &ent.d_fileno - base, (unsigned long) &ent.d_name - base, sizeof(ent.d_name));
 }
 
+static void checkDebugger() {
+  int name[4];
+  name[0] = CTL_KERN;
+  name[1] = KERN_PROC;
+  name[2] = KERN_PROC_PID;
+  name[3] = getpid();
+  struct kinfo_proc info;
+  size_t info_size = sizeof(info);
+  int error = sysctl(name, sizeof(name)/sizeof(*name), &info, &info_size, 0, 0);
+  bool ret = ((info.kp_proc.p_flag & P_TRACED) !=0);
+  printf("checkDebugger error=%d, ret=%d, P_TRACED=%d\n", error, ret, P_TRACED);
+}
+
+static void test_host_statistics() {
+  unsigned int count = HOST_VM_INFO_COUNT;
+  struct vm_statistics stats;
+  mach_port_t mhs = mach_host_self();
+  int ret = host_statistics(mhs, HOST_VM_INFO, (host_info_t)&stats, &count);
+  size_t size = sizeof(stats);
+  char *buf = malloc(size * 3);
+  memset(buf, 0, size * 3);
+  hex(buf, &stats, size);
+  printf("test_host_statistics ret=%d, size=%lu, hex=%s\n", ret, size, buf);
+  free(buf);
+}
+
 void do_test() {
   test_printf();
   test_sysctl_CTL_UNSPEC();
@@ -315,4 +362,6 @@ void do_test() {
   test_dirent();
   test_sysctl_HW_CPU_FAMILY();
   test_sysctl_KERN_OSTYPE();
+  checkDebugger();
+  test_host_statistics();
 }
